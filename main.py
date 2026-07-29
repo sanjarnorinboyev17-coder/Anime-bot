@@ -55,7 +55,7 @@ async def main():
     settings = get_settings()
     db = Database(settings.database_path)
     await db.init()
-    bot = Bot(settings.bot_token)
+    bot = Bot(token=settings.bot_token)
     dp = Dispatcher(db=db, settings=settings)
     dp.message.middleware(SubscriptionMiddleware())
     dp.callback_query.middleware(SubscriptionMiddleware())
