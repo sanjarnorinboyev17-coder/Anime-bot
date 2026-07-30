@@ -59,6 +59,17 @@ async def do_search(message: Message, query: str, db: Database):
     trailers = {code for code, _ in groups if await db.get_trailer(code)}
     await message.answer(f"🔎 <b>{len(groups)} ta anime</b> topildi. Anime yoki trailer tanlang:", reply_markup=result_keyboard(groups, trailers), parse_mode="HTML")
 
+async def do_code_search(message: Message, code_text: str, db: Database):
+    try:
+        code = int(code_text.strip())
+    except ValueError:
+        return await message.answer("⚠️ Kod faqat raqamlardan iborat bo‘lishi kerak. Masalan: 26")
+    anime = await db.get_anime(code)
+    if not anime:
+        return await message.answer(f"🔎 {code} kodli anime topilmadi.")
+    trailers = {code} if await db.get_trailer(code) else set()
+    await message.answer("🔎 Faqat shu kodga mos anime topildi:", reply_markup=result_keyboard([(code, anime[1])], trailers))
+
 @router.message(Command("search"))
 async def search_command(message: Message):
     from .start import search_menu
@@ -85,6 +96,10 @@ async def search_by_channel(message: Message, db: Database):
 @router.message(F.text, ~F.text.startswith("/"))
 async def search_text(message: Message, bot: Bot, db: Database):
     try:
+        if message.from_user.id in code_search_users:
+            code_search_users.discard(message.from_user.id)
+            await bot.send_chat_action(message.chat.id, "typing")
+            return await do_code_search(message, message.text, db)
         code_search_users.discard(message.from_user.id)
         await bot.send_chat_action(message.chat.id, "typing")
         await do_search(message, message.text, db)
