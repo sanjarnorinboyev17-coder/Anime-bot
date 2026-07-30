@@ -34,7 +34,7 @@ def episode_keyboard(rows, code, page, has_trailer=False):
     buttons = []
     if has_trailer:
         buttons.append([InlineKeyboardButton(text="🎬 Trailer", callback_data=f"trailer_show:{code}")])
-    buttons.extend([[InlineKeyboardButton(text=f"{episode_number(row[1]) or index + 1}-qism", callback_data=f"episode_get:{row[0]}")] for index, row in enumerate(rows[start:end], start=start)])
+    buttons.append([InlineKeyboardButton(text=f"{episode_number(row[1]) or index + 1}-qism", callback_data=f"episode_get:{row[0]}") for index, row in enumerate(rows[start:end], start=start)])
     nav = []
     if page > 0: nav.append(InlineKeyboardButton(text="⬅️ Oldingi", callback_data=f"episode_select:{code}:{page-1}"))
     if end < len(rows): nav.append(InlineKeyboardButton(text="Keyingi ➡️", callback_data=f"episode_select:{code}:{page+1}"))
@@ -121,7 +121,10 @@ async def trailer_show(callback: CallbackQuery, bot: Bot, db: Database):
         trailer = await db.get_trailer(int(callback.data.split(":")[1]))
         if not trailer: return await callback.answer("Trailer topilmadi", show_alert=True)
         await callback.answer("Trailer yuborilmoqda…")
-        await bot.send_video(callback.from_user.id, trailer[0], caption="🎬 Anime trailer")
+        if trailer[0].startswith("photo:"):
+            await bot.send_photo(callback.from_user.id, trailer[0].split(":", 1)[1], caption="🎬 Anime rasmi")
+        else:
+            await bot.send_video(callback.from_user.id, trailer[0], caption="🎬 Anime trailer")
     except Exception:
         await callback.message.answer("⚠️ Trailer yuborishda xatolik yuz berdi.")
 

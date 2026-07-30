@@ -25,9 +25,13 @@ def is_admin(message, settings):
 
 async def db_save_and_publish(message: Message, bot: Bot, db: Database, settings, code: int, name: str, trailer: str, voice: str = "", genre: str = "", language: str = "Uzbek tilida"):
     caption = f"🎬 <b>{name}</b>\n\n🎤 Ovoz berdi: {voice or '—'}\n📂 Nomi: {name}\n📝 Qismlar: 0 ta\n🎭 Janri: {genre or '—'}\n🌐 Tili: {language or 'Uzbek tilida'}\n🆔 Anime kodi: {code}"
-    sent = await bot.send_video(settings.channel_id, trailer, caption=caption, parse_mode="HTML")
+    if trailer.startswith("photo:"):
+        sent = await bot.send_photo(settings.channel_id, trailer.split(":", 1)[1], caption=caption, parse_mode="HTML")
+    else:
+        sent = await bot.send_video(settings.channel_id, trailer, caption=caption, parse_mode="HTML")
     await db.save_anime(code, name, trailer, sent.message_id)
-    await db.save_trailer(code, trailer, message.from_user.id)
+    if not trailer.startswith("photo:"):
+        await db.save_trailer(code, trailer, message.from_user.id)
     await bot.edit_message_reply_markup(chat_id=settings.channel_id, message_id=sent.message_id, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📥 Yuklab olish", url=f"https://t.me/tarjimaanimelaruz_bot?start=anime_{code}")]
     ]))
@@ -48,7 +52,7 @@ async def addepisode(message: Message, settings):
 async def addanime(message: Message, settings):
     if not is_admin(message, settings): return
     pending_animes[message.from_user.id] = {"step": "trailer"}
-    await message.answer("🎬 1/3 Avval anime trailer videosini yuboring:")
+    await message.answer("🎬 1/3 Anime rasmi yoki trailer videosini yuboring:")
 
 @router.message(F.text, ~F.text.startswith("/"))
 async def episode_details(message: Message, bot: Bot, db: Database, settings):
@@ -172,6 +176,14 @@ async def add_video(message: Message, bot: Bot, db: Database, settings):
     except Exception:
         await message.answer("⚠️ Video qo‘shishda xatolik yuz berdi.")
 
+@router.message(F.photo)
+async def add_photo(message: Message, settings):
+    if not is_admin(message, settings): return
+    anime_state = pending_animes.get(message.from_user.id)
+    if anime_state and anime_state["step"] == "trailer":
+        anime_state.update(trailer=f"photo:{message.photo[-1].file_id}", step="name")
+        await message.answer("✅ 2/3 Anime nomini yuboring:")
+
 @router.message(Command("admin"))
 async def admin(message: Message, db: Database, settings):
     if not is_admin(message, settings): return
@@ -191,7 +203,7 @@ async def add_anime_help(callback: CallbackQuery, settings):
     if callback.from_user.id not in settings.admin_ids: return await callback.answer("Ruxsat yo‘q", show_alert=True)
     pending_animes[callback.from_user.id] = {"step": "trailer"}
     await callback.answer()
-    await callback.message.answer("🎬 1/3 Avval anime trailer videosini yuboring:")
+    await callback.message.answer("🎬 1/3 Anime rasmi yoki trailer videosini yuboring:")
 
 @router.callback_query(F.data == "admin:required_channels")
 async def required_channels_menu(callback: CallbackQuery, db: Database, settings):
