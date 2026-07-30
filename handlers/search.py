@@ -27,13 +27,14 @@ def result_keyboard(groups, trailers):
     for code, caption in groups:
         title = re.sub(r"(?:kod|code)\s*[:#-]?\s*\d+|#\d+", "", caption or "", flags=re.I).strip()[:40]
         buttons.append([InlineKeyboardButton(text=f"🎞 {title or f'Anime {code}'}", callback_data=f"episode_select:{code}:0")])
-        if code in trailers:
-            buttons.append([InlineKeyboardButton(text=f"🎬 Trailer — {title or f'Anime {code}'}", callback_data=f"trailer_show:{code}")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-def episode_keyboard(rows, code, page):
+def episode_keyboard(rows, code, page, has_trailer=False):
     start, end = page * EPISODES_PER_PAGE, (page + 1) * EPISODES_PER_PAGE
-    buttons = [[InlineKeyboardButton(text=f"{episode_number(row[1]) or index + 1}-qism", callback_data=f"episode_get:{row[0]}")] for index, row in enumerate(rows[start:end], start=start)]
+    buttons = []
+    if has_trailer:
+        buttons.append([InlineKeyboardButton(text="🎬 Trailer", callback_data=f"trailer_show:{code}")])
+    buttons.extend([[InlineKeyboardButton(text=f"{episode_number(row[1]) or index + 1}-qism", callback_data=f"episode_get:{row[0]}")] for index, row in enumerate(rows[start:end], start=start)])
     nav = []
     if page > 0: nav.append(InlineKeyboardButton(text="⬅️ Oldingi", callback_data=f"episode_select:{code}:{page-1}"))
     if end < len(rows): nav.append(InlineKeyboardButton(text="Keyingi ➡️", callback_data=f"episode_select:{code}:{page+1}"))
@@ -97,7 +98,7 @@ async def episode_select(callback: CallbackQuery, db: Database):
         rows = await db.get_episodes(int(code))
         if not rows: return await callback.answer("Bu anime uchun qismlar topilmadi", show_alert=True)
         await callback.answer()
-        await callback.message.edit_text(f"🎞 Anime kodi: {code}\nQismni tanlang:", reply_markup=episode_keyboard(rows, int(code), int(page)))
+        await callback.message.edit_text(f"🎞 Anime kodi: {code}\nTrailer yoki qismni tanlang:", reply_markup=episode_keyboard(rows, int(code), int(page), bool(await db.get_trailer(int(code)))))
     except Exception:
         await callback.answer("Xatolik yuz berdi", show_alert=True)
 
@@ -132,7 +133,7 @@ async def anime_download(callback: CallbackQuery, bot: Bot, db: Database):
         rows = await db.get_episodes(code)
         if rows:
             await callback.answer()
-            return await callback.message.answer(f"🎬 <b>{anime[1]}</b>\n\nQismni tanlang:", reply_markup=episode_keyboard(rows, code, 0), parse_mode="HTML")
+            return await callback.message.answer(f"🎬 <b>{anime[1]}</b>\n\nTrailer yoki qismni tanlang:", reply_markup=episode_keyboard(rows, code, 0, bool(await db.get_trailer(code))), parse_mode="HTML")
         await callback.answer("Hali qismlar qo‘shilmagan", show_alert=True)
     except Exception:
         await callback.answer("Xatolik yuz berdi", show_alert=True)
@@ -143,7 +144,7 @@ async def anime_episodes(callback: CallbackQuery, db: Database):
         code = int(callback.data.split(":")[1]); rows = await db.get_episodes(code)
         if not rows: return await callback.answer("Hali qismlar qo‘shilmagan", show_alert=True)
         await callback.answer()
-        await callback.message.answer(f"📚 Mavjud qismlar ({len(rows)} ta):", reply_markup=episode_keyboard(rows, code, 0))
+        await callback.message.answer(f"📚 Trailer yoki mavjud qismlarni tanlang ({len(rows)} ta):", reply_markup=episode_keyboard(rows, code, 0, bool(await db.get_trailer(code))))
     except Exception:
         await callback.answer("Xatolik yuz berdi", show_alert=True)
 
