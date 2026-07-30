@@ -31,11 +31,11 @@ async def start(message: Message, db: Database):
             if anime and rows:
                 buttons = [[InlineKeyboardButton(text=f"{index + 1}-qism", callback_data=f"episode_get:{row[0]}" )] for index, row in enumerate(rows)]
                 if anime[2]:
-                    voice, genre, language = (details[1:] if details else ("", "", "Uzbek tilida"))
+                    voice, genre, language, content_type = (details[1:] if details else ("", "", "Uzbek tilida", "Anime"))
                     return await message.answer_video(anime[2], caption=f"🎬 <b>{anime[1]}</b>\n\n🎤 Ovoz berdi: {voice or '—'}\n📂 Nomi: {anime[1]}\n🎭 Janri: {genre or '—'}\n🌐 Tili: {language or 'Uzbek tilida'}\n🆔 Anime kodi: {code}", parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
             if anime:
                 if anime[2]:
-                    voice, genre, language = (details[1:] if details else ("", "", "Uzbek tilida"))
+                    voice, genre, language, content_type = (details[1:] if details else ("", "", "Uzbek tilida", "Anime"))
                     return await message.answer_video(anime[2], caption=f"🎬 <b>{anime[1]}</b>\n\n🎤 Ovoz berdi: {voice or '—'}\n📂 Nomi: {anime[1]}\n🎭 Janri: {genre or '—'}\n🌐 Tili: {language or 'Uzbek tilida'}\n🆔 Anime kodi: {code}\n\nHali qismlar qo‘shilmagan.", parse_mode="HTML")
                 return await message.answer(f"🎬 <b>{anime[1]}</b>\n\nHali qismlar qo‘shilmagan.", parse_mode="HTML")
         except (ValueError, IndexError):

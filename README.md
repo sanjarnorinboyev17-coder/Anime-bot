@@ -15,7 +15,7 @@ python -m bot.main
 
 Bot API eski kanal tarixini o‘qish endpointiga ega emas. Shu sabab bot qo‘shilganidan keyingi video/document channel postlar keshga yoziladi. Eski kontentni indekslash uchun postlarni botga qayta yuborish yoki alohida Telegram user-client (MTProto) importer kerak.
 
-Admin botga `/add` yuborib, keyin video yoki documentni caption bilan jo‘natsa, bot uni kanalga yuboradi va qidiruv cache’iga qo‘shadi. Caption ichida anime nomi va qism raqamini yozish tavsiya qilinadi.
+Admin kontent qo‘shish uchun `/addanime`, `/addmovie`, `/addcartoon` yoki `/addserial` buyrug‘idan foydalanadi. Keyin trailer, nom, ovoz/dublyaj, janr, til va kod bosqichma-bosqich so‘raladi. Caption ichida kod va qism raqami bo‘lgan video yuborilsa, u tegishli kontent qismlariga qo‘shiladi.
 
 Server-side boundary: token faqat `config.py` orqali server muhitidan olinadi; client Telegram bilan faqat Bot API orqali gaplashadi, kanal va SQLite ma’lumotlariga client to‘g‘ridan-to‘g‘ri kira olmaydi.
 

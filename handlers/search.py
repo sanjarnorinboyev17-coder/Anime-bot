@@ -22,7 +22,7 @@ def result_keyboard(groups, trailers):
     buttons = []
     for code, caption in groups:
         title = re.sub(r"(?:kod|code)\s*[:#-]?\s*\d+|#\d+", "", caption or "", flags=re.I).strip()[:40]
-        buttons.append([InlineKeyboardButton(text=f"🎞 {title or f'Anime {code}'}", callback_data=f"episode_select:{code}:0")])
+        buttons.append([InlineKeyboardButton(text=f"🎞 {title or f'Kontent {code}'}", callback_data=f"episode_select:{code}:0")])
         if code in trailers:
             buttons.append([InlineKeyboardButton(text=f"🎬 Trailer — {title or f'Anime {code}'}", callback_data=f"trailer_show:{code}")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
