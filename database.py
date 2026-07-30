@@ -18,7 +18,7 @@ class Database:
             CREATE TABLE IF NOT EXISTS animes (anime_code INTEGER PRIMARY KEY, name TEXT NOT NULL, trailer_file_id TEXT, channel_message_id INTEGER, created_at TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS required_channels (channel_id INTEGER PRIMARY KEY, title TEXT NOT NULL, username TEXT);
             """)
-            for column in ("voice TEXT", "genre TEXT", "language TEXT", "content_type TEXT DEFAULT 'Anime'"):
+            for column in ("voice TEXT", "genre TEXT", "language TEXT"):
                 try:
                     await db.execute(f"ALTER TABLE animes ADD COLUMN {column}")
                 except Exception:
@@ -29,14 +29,14 @@ class Database:
                 pass
             await db.commit()
 
-    async def save_anime(self, code: int, name: str, trailer_file_id: str = None, channel_message_id: int = None, voice: str = "", genre: str = "", language: str = "Uzbek tilida", content_type: str = "Anime"):
+    async def save_anime(self, code: int, name: str, trailer_file_id: str = None, channel_message_id: int = None, voice: str = "", genre: str = "", language: str = "Uzbek tilida"):
         async with aiosqlite.connect(self.path) as db:
-            await db.execute("INSERT INTO animes(anime_code, name, trailer_file_id, channel_message_id, created_at, voice, genre, language, content_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(anime_code) DO UPDATE SET name=excluded.name, trailer_file_id=COALESCE(excluded.trailer_file_id, animes.trailer_file_id), channel_message_id=COALESCE(excluded.channel_message_id, animes.channel_message_id), voice=excluded.voice, genre=excluded.genre, language=excluded.language, content_type=excluded.content_type", (code, name, trailer_file_id, channel_message_id, datetime.now(timezone.utc).isoformat(), voice, genre, language, content_type))
+            await db.execute("INSERT INTO animes(anime_code, name, trailer_file_id, channel_message_id, created_at, voice, genre, language) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(anime_code) DO UPDATE SET name=excluded.name, trailer_file_id=COALESCE(excluded.trailer_file_id, animes.trailer_file_id), channel_message_id=COALESCE(excluded.channel_message_id, animes.channel_message_id), voice=excluded.voice, genre=excluded.genre, language=excluded.language", (code, name, trailer_file_id, channel_message_id, datetime.now(timezone.utc).isoformat(), voice, genre, language))
             await db.commit()
 
     async def get_anime_details(self, code: int):
         async with aiosqlite.connect(self.path) as db:
-            return await (await db.execute("SELECT name, voice, genre, language, content_type FROM animes WHERE anime_code=?", (code,))).fetchone()
+            return await (await db.execute("SELECT name, voice, genre, language FROM animes WHERE anime_code=?", (code,))).fetchone()
 
     async def save_required_channel(self, channel_id: int, title: str, username: str = "", invite_link: str = ""):
         async with aiosqlite.connect(self.path) as db:

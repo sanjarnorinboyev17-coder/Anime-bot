@@ -9,6 +9,9 @@ except ImportError:
 
 router = Router()
 EPISODES_PER_PAGE = 10
+NAME_BUTTON = "🔎 Anime nomi orqali izlash"
+CODE_BUTTON = "🔢 Kod orqali izlash"
+CHANNEL_BUTTON = "📢 Kanal orqali izlash"
 
 def anime_code(caption: str):
     match = re.search(r"(?:kod|code)\s*[:#-]\s*(\d+)|#(\d+)", caption or "", re.I)
@@ -22,7 +25,7 @@ def result_keyboard(groups, trailers):
     buttons = []
     for code, caption in groups:
         title = re.sub(r"(?:kod|code)\s*[:#-]?\s*\d+|#\d+", "", caption or "", flags=re.I).strip()[:40]
-        buttons.append([InlineKeyboardButton(text=f"🎞 {title or f'Kontent {code}'}", callback_data=f"episode_select:{code}:0")])
+        buttons.append([InlineKeyboardButton(text=f"🎞 {title or f'Anime {code}'}", callback_data=f"episode_select:{code}:0")])
         if code in trailers:
             buttons.append([InlineKeyboardButton(text=f"🎬 Trailer — {title or f'Anime {code}'}", callback_data=f"trailer_show:{code}")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -56,7 +59,25 @@ async def do_search(message: Message, query: str, db: Database):
 
 @router.message(Command("search"))
 async def search_command(message: Message):
-    await message.answer("Anime nomini yuboring. Bekor qilish: /cancel")
+    from .start import search_menu
+    await message.answer("Qidiruv turini tanlang:", reply_markup=search_menu())
+
+@router.message(F.text == NAME_BUTTON)
+async def search_by_name(message: Message):
+    await message.answer("🔎 Anime nomini yuboring. Bekor qilish: /cancel")
+
+@router.message(F.text == CODE_BUTTON)
+async def search_by_code(message: Message):
+    await message.answer("🔢 Anime kodini yuboring (masalan: 26). Bekor qilish: /cancel")
+
+@router.message(F.text == CHANNEL_BUTTON)
+async def search_by_channel(message: Message, db: Database):
+    animes = await db.list_animes()
+    if not animes:
+        return await message.answer("📢 Kanalda hozircha anime topilmadi.")
+    groups = [(code, name) for code, name, _, _ in animes]
+    trailers = {code for code, _ in groups if await db.get_trailer(code)}
+    await message.answer(f"📢 Kanalimizdagi {len(groups)} ta anime:", reply_markup=result_keyboard(groups, trailers))
 
 @router.message(F.text, ~F.text.startswith("/"))
 async def search_text(message: Message, bot: Bot, db: Database):

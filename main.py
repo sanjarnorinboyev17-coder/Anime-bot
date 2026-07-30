@@ -69,7 +69,7 @@ async def main():
     scheduler = AsyncIOScheduler()
     scheduler.add_job(refresh_cache, "interval", minutes=30, args=(bot, db, settings.channel_id))
     scheduler.start()
-    await bot.set_my_commands([BotCommand(command="start", description="Botni boshlash"), BotCommand(command="search", description="Kino/multfilm/serial qidirish"), BotCommand(command="cancel", description="Bekor qilish")])
+    await bot.set_my_commands([BotCommand(command="start", description="Botni boshlash"), BotCommand(command="search", description="Anime qidirish"), BotCommand(command="cancel", description="Bekor qilish")])
     try:
         while True:
             try:
