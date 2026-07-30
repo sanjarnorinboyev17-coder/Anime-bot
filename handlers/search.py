@@ -9,6 +9,7 @@ except ImportError:
 
 router = Router()
 EPISODES_PER_PAGE = 10
+code_search_users: set[int] = set()
 NAME_BUTTON = "🔎 Anime nomi orqali izlash"
 CODE_BUTTON = "🔢 Kod orqali izlash"
 CHANNEL_BUTTON = "📢 Kanal orqali izlash"
@@ -68,6 +69,7 @@ async def search_by_name(message: Message):
 
 @router.message(F.text == CODE_BUTTON)
 async def search_by_code(message: Message):
+    code_search_users.add(message.from_user.id)
     await message.answer("🔢 Anime kodini yuboring (masalan: 26). Bekor qilish: /cancel")
 
 @router.message(F.text == CHANNEL_BUTTON)
@@ -82,6 +84,7 @@ async def search_by_channel(message: Message, db: Database):
 @router.message(F.text, ~F.text.startswith("/"))
 async def search_text(message: Message, bot: Bot, db: Database):
     try:
+        code_search_users.discard(message.from_user.id)
         await bot.send_chat_action(message.chat.id, "typing")
         await do_search(message, message.text, db)
     except Exception:

@@ -4,6 +4,10 @@ from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.dispatcher.event.bases import SkipHandler
 try:
+    from .search import code_search_users
+except ImportError:
+    from handlers.search import code_search_users
+try:
     from ..database import Database
     from ..utils.cache import cache_channel_message
 except ImportError:
@@ -107,6 +111,8 @@ async def episode_details(message: Message, bot: Bot, db: Database, settings):
 
 @router.message(F.text.regexp(r"^\d+$"))
 async def trailer_code(message: Message, settings):
+    if message.from_user.id in code_search_users:
+        raise SkipHandler
     if is_admin(message, settings):
         pending_trailers[message.from_user.id] = int(message.text)
         await message.answer(f"✅ {message.text} kodi qabul qilindi. Endi trailer videosini yuboring: /cancel")
