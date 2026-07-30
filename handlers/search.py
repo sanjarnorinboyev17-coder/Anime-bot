@@ -34,7 +34,7 @@ def episode_keyboard(rows, code, page, has_trailer=False):
     buttons = []
     if has_trailer:
         buttons.append([InlineKeyboardButton(text="🎬 Trailer", callback_data=f"trailer_show:{code}")])
-    buttons.append([InlineKeyboardButton(text=f"{episode_number(row[1]) or index + 1}-qism", callback_data=f"episode_get:{row[0]}") for index, row in enumerate(rows[start:end], start=start)])
+        buttons.append([InlineKeyboardButton(text=str(episode_number(row[1]) or index + 1), callback_data=f"episode_get:{row[0]}") for index, row in enumerate(rows[start:end], start=start)])
     nav = []
     if page > 0: nav.append(InlineKeyboardButton(text="⬅️ Oldingi", callback_data=f"episode_select:{code}:{page-1}"))
     if end < len(rows): nav.append(InlineKeyboardButton(text="Keyingi ➡️", callback_data=f"episode_select:{code}:{page+1}"))

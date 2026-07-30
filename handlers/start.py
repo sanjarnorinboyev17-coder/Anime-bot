@@ -36,7 +36,7 @@ async def start(message: Message, db: Database):
             details = await db.get_anime_details(code)
             rows = await db.get_episodes(code)
             if anime and rows:
-                buttons = [[InlineKeyboardButton(text=f"{index + 1}-qism", callback_data=f"episode_get:{row[0]}" ) for index, row in enumerate(rows)]]
+                buttons = [[InlineKeyboardButton(text=str(index + 1), callback_data=f"episode_get:{row[0]}" ) for index, row in enumerate(rows)]]
                 if anime[2]:
                     voice, genre, language = (details[1:] if details else ("", "", "Uzbek tilida"))
                     caption = f"🎬 <b>{anime[1]}</b>\n\n🎤 Ovoz berdi: {voice or '—'}\n📂 Nomi: {anime[1]}\n🎭 Janri: {genre or '—'}\n🌐 Tili: {language or 'Uzbek tilida'}\n🆔 Anime kodi: {code}"
