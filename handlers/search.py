@@ -72,12 +72,12 @@ async def search_by_code(message: Message):
 
 @router.message(F.text == CHANNEL_BUTTON)
 async def search_by_channel(message: Message, db: Database):
-    animes = await db.list_animes()
-    if not animes:
-        return await message.answer("📢 Kanalda hozircha anime topilmadi.")
-    groups = [(code, name) for code, name, _, _ in animes]
-    trailers = {code for code, _ in groups if await db.get_trailer(code)}
-    await message.answer(f"📢 Kanalimizdagi {len(groups)} ta anime:", reply_markup=result_keyboard(groups, trailers))
+    await message.answer(
+        "📢 Anime izlash uchun kanalimizga o‘ting:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📢 Kanalga o‘tish", url="https://t.me/animelarxuzbtilda")]
+        ])
+    )
 
 @router.message(F.text, ~F.text.startswith("/"))
 async def search_text(message: Message, bot: Bot, db: Database):
