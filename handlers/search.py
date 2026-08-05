@@ -1,4 +1,6 @@
 import re
+import logging
+from html import escape
 from aiogram import Router, F, Bot
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -8,7 +10,12 @@ except ImportError:
     from database import Database
 
 router = Router()
+logger = logging.getLogger(__name__)
 EPISODES_PER_PAGE = 10
+code_search_users: set[int] = set()
+NAME_BUTTON = "🔎 Anime nomi orqali izlash"
+CODE_BUTTON = "🔢 Kod orqali izlash"
+CHANNEL_BUTTON = "📢 Kanal orqali izlash"
 
 def anime_code(caption: str):
     match = re.search(r"(?:kod|code)\s*[:#-]\s*(\d+)|#(\d+)", caption or "", re.I)
@@ -22,14 +29,13 @@ def result_keyboard(groups, trailers):
     buttons = []
     for code, caption in groups:
         title = re.sub(r"(?:kod|code)\s*[:#-]?\s*\d+|#\d+", "", caption or "", flags=re.I).strip()[:40]
-        buttons.append([InlineKeyboardButton(text=f"🎞 {title or f'Kontent {code}'}", callback_data=f"episode_select:{code}:0")])
-        if code in trailers:
-            buttons.append([InlineKeyboardButton(text=f"🎬 Trailer — {title or f'Anime {code}'}", callback_data=f"trailer_show:{code}")])
+        buttons.append([InlineKeyboardButton(text=f"🎞 {title or f'Anime {code}'}", callback_data=f"episode_select:{code}:0")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-def episode_keyboard(rows, code, page):
+def episode_keyboard(rows, code, page, has_trailer=False):
     start, end = page * EPISODES_PER_PAGE, (page + 1) * EPISODES_PER_PAGE
-    buttons = [[InlineKeyboardButton(text=f"{episode_number(row[1]) or index + 1}-qism", callback_data=f"episode_get:{row[0]}")] for index, row in enumerate(rows[start:end], start=start)]
+    buttons = []
+    buttons.append([InlineKeyboardButton(text=str(episode_number(row[1]) or index + 1), callback_data=f"episode_get:{row[0]}") for index, row in enumerate(rows[start:end], start=start)])
     nav = []
     if page > 0: nav.append(InlineKeyboardButton(text="⬅️ Oldingi", callback_data=f"episode_select:{code}:{page-1}"))
     if end < len(rows): nav.append(InlineKeyboardButton(text="Keyingi ➡️", callback_data=f"episode_select:{code}:{page+1}"))
@@ -39,41 +45,117 @@ def episode_keyboard(rows, code, page):
 
 async def do_search(message: Message, query: str, db: Database):
     await db.upsert_user(message.from_user)
-    rows = await db.search(message.from_user.id, query.strip())
+    query = query.strip()
+    if not query:
+        return await message.answer("🔎 Anime nomini yoki kodini yuboring.")
+
+    rows = await db.search(message.from_user.id, query)
     groups, seen = [], set()
-    query_lower = query.strip().lower()
+    # Telegramdan kelgan apostrof va bo'shliqlar turlicha bo'lishi mumkin.
+    def normalize(value: str) -> str:
+        return re.sub(r"[’'`ʻʼ‘]", "'", " ".join((value or "").lower().split()))
+
+    query_lower = normalize(query)
     for code, name, _, _ in await db.list_animes():
-        if not query_lower or query_lower in name.lower() or query_lower in str(code):
+        if query_lower in normalize(name) or query_lower in str(code):
             groups.append((code, name)); seen.add(code)
     for row in rows:
         code = anime_code(row[1])
         if code is not None and code not in seen:
             groups.append((code, row[1])); seen.add(code)
     if not groups:
-        return await message.answer("🔎 Kechirasiz, topilmadi. Captionda anime kodi bo‘lishi kerak: <code>kod:26 Naruto 1-qism</code>", parse_mode="HTML")
+        return await message.answer(
+            "🔎 Kechirasiz, anime topilmadi. Nomini to‘liqroq yozib ko‘ring yoki kod orqali qidiring.\n\n"
+            "Masalan: <code>Tungi osmon ostida ko‘rinmas sevgi</code>",
+            parse_mode="HTML",
+        )
     trailers = {code for code, _ in groups if await db.get_trailer(code)}
     await message.answer(f"🔎 <b>{len(groups)} ta anime</b> topildi. Anime yoki trailer tanlang:", reply_markup=result_keyboard(groups, trailers), parse_mode="HTML")
 
+async def do_code_search(message: Message, code_text: str, db: Database):
+    try:
+        code = int(code_text.strip())
+    except ValueError:
+        return await message.answer("⚠️ Kod faqat raqamlardan iborat bo‘lishi kerak. Masalan: 26")
+    anime = await db.get_anime(code)
+    if not anime:
+        return await message.answer(f"🔎 {code} kodli anime topilmadi.")
+    trailers = {code} if await db.get_trailer(code) else set()
+    await message.answer("🔎 Faqat shu kodga mos anime topildi:", reply_markup=result_keyboard([(code, anime[1])], trailers))
+
+async def send_anime_result(message: Message, bot: Bot, db: Database, code: int, rows, page=0):
+    anime = await db.get_anime(code)
+    details = await db.get_anime_details(code)
+    name = escape(anime[1] if anime else (details[0] if details else f"Anime {code}"))
+    voice, genre, language = (details[1:] if details else ("", "", "Uzbek tilida"))
+    text = (
+        f"🎬 <b>{name}</b>\n\n"
+        f"🎤 Ovoz berdi: {escape(voice or '—')}\n"
+        f"📂 Nomi: {name}\n"
+        f"📝 Qismlar: {len(rows)} ta\n"
+        f"🎭 Janri: {escape(genre or '—')}\n"
+        f"🌐 Tili: {escape(language or 'Uzbek tilida')}\n"
+        f"🆔 Anime kodi: {code}"
+    )
+    keyboard = episode_keyboard(rows, code, page)
+    trailer = await db.get_trailer(code)
+    media = trailer[0] if trailer else (anime[2] if anime else None)
+    if media and media.startswith("photo:"):
+        await bot.send_photo(message.chat.id, media.split(":", 1)[1], caption=text, parse_mode="HTML", reply_markup=keyboard)
+    elif media:
+        await bot.send_video(message.chat.id, media, caption=text, parse_mode="HTML", reply_markup=keyboard)
+    else:
+        await message.answer(text, parse_mode="HTML", reply_markup=keyboard)
+
 @router.message(Command("search"))
 async def search_command(message: Message):
-    await message.answer("Anime nomini yuboring. Bekor qilish: /cancel")
+    from .start import search_menu
+    await message.answer("Qidiruv turini tanlang:", reply_markup=search_menu())
+
+@router.message(F.text == NAME_BUTTON)
+async def search_by_name(message: Message):
+    await message.answer("🔎 Anime nomini yuboring. Bekor qilish: /cancel")
+
+@router.message(F.text == CODE_BUTTON)
+async def search_by_code(message: Message):
+    code_search_users.add(message.from_user.id)
+    await message.answer("🔢 Anime kodini yuboring (masalan: 26). Bekor qilish: /cancel")
+
+@router.message(F.text == CHANNEL_BUTTON)
+async def search_by_channel(message: Message, db: Database):
+    await message.answer(
+        "📢 Anime izlash uchun kanalimizga o‘ting:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📢 Kanalga o‘tish", url="https://t.me/animelarxuzbtilda")]
+        ])
+    )
 
 @router.message(F.text, ~F.text.startswith("/"))
 async def search_text(message: Message, bot: Bot, db: Database):
     try:
+        if message.from_user.id in code_search_users:
+            code_search_users.discard(message.from_user.id)
+            await bot.send_chat_action(message.chat.id, "typing")
+            return await do_code_search(message, message.text, db)
+        code_search_users.discard(message.from_user.id)
         await bot.send_chat_action(message.chat.id, "typing")
         await do_search(message, message.text, db)
     except Exception:
-        await message.answer("⚠️ Qidiruvda xatolik yuz berdi.")
+        logger.exception("Anime search failed for user %s", message.from_user.id)
+        await message.answer("⚠️ Qidiruvda xatolik yuz berdi. Iltimos, yana bir marta urinib ko‘ring.")
 
 @router.callback_query(F.data.startswith("episode_select:"))
-async def episode_select(callback: CallbackQuery, db: Database):
+async def episode_select(callback: CallbackQuery, bot: Bot, db: Database):
     try:
         _, code, page = callback.data.split(":")
         rows = await db.get_episodes(int(code))
         if not rows: return await callback.answer("Bu anime uchun qismlar topilmadi", show_alert=True)
         await callback.answer()
-        await callback.message.edit_text(f"🎞 Anime kodi: {code}\nQismni tanlang:", reply_markup=episode_keyboard(rows, int(code), int(page)))
+        if int(page) == 0:
+            await callback.message.delete()
+            await send_anime_result(callback.message, bot, db, int(code), rows)
+        else:
+            await callback.message.edit_text(f"🎞 Anime kodi: {code}\nQismlarni tanlang:", reply_markup=episode_keyboard(rows, int(code), int(page)))
     except Exception:
         await callback.answer("Xatolik yuz berdi", show_alert=True)
 
@@ -96,7 +178,10 @@ async def trailer_show(callback: CallbackQuery, bot: Bot, db: Database):
         trailer = await db.get_trailer(int(callback.data.split(":")[1]))
         if not trailer: return await callback.answer("Trailer topilmadi", show_alert=True)
         await callback.answer("Trailer yuborilmoqda…")
-        await bot.send_video(callback.from_user.id, trailer[0], caption="🎬 Anime trailer")
+        if trailer[0].startswith("photo:"):
+            await bot.send_photo(callback.from_user.id, trailer[0].split(":", 1)[1], caption="🎬 Anime rasmi")
+        else:
+            await bot.send_video(callback.from_user.id, trailer[0], caption="🎬 Anime trailer")
     except Exception:
         await callback.message.answer("⚠️ Trailer yuborishda xatolik yuz berdi.")
 
@@ -108,7 +193,7 @@ async def anime_download(callback: CallbackQuery, bot: Bot, db: Database):
         rows = await db.get_episodes(code)
         if rows:
             await callback.answer()
-            return await callback.message.answer(f"🎬 <b>{anime[1]}</b>\n\nQismni tanlang:", reply_markup=episode_keyboard(rows, code, 0), parse_mode="HTML")
+            return await callback.message.answer(f"🎬 <b>{anime[1]}</b>\n\nTrailer yoki qismni tanlang:", reply_markup=episode_keyboard(rows, code, 0, bool(await db.get_trailer(code))), parse_mode="HTML")
         await callback.answer("Hali qismlar qo‘shilmagan", show_alert=True)
     except Exception:
         await callback.answer("Xatolik yuz berdi", show_alert=True)
@@ -119,7 +204,7 @@ async def anime_episodes(callback: CallbackQuery, db: Database):
         code = int(callback.data.split(":")[1]); rows = await db.get_episodes(code)
         if not rows: return await callback.answer("Hali qismlar qo‘shilmagan", show_alert=True)
         await callback.answer()
-        await callback.message.answer(f"📚 Mavjud qismlar ({len(rows)} ta):", reply_markup=episode_keyboard(rows, code, 0))
+        await callback.message.answer(f"📚 Trailer yoki mavjud qismlarni tanlang ({len(rows)} ta):", reply_markup=episode_keyboard(rows, code, 0, bool(await db.get_trailer(code))))
     except Exception:
         await callback.answer("Xatolik yuz berdi", show_alert=True)
 

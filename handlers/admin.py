@@ -4,6 +4,10 @@ from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.dispatcher.event.bases import SkipHandler
 try:
+    from .search import code_search_users
+except ImportError:
+    from handlers.search import code_search_users
+try:
     from ..database import Database
     from ..utils.cache import cache_channel_message
 except ImportError:
@@ -14,17 +18,20 @@ router = Router()
 pending_trailers: dict[int, int] = {}
 pending_episodes: dict[int, dict] = {}
 pending_animes: dict[int, dict] = {}
-CONTENT_COMMANDS = {"addanime": "Anime", "addmovie": "Kino", "addcartoon": "Multfilm", "addserial": "Serial"}
 pending_required_channels: set[int] = set()
 
 def is_admin(message, settings):
     return message.from_user.id in settings.admin_ids
 
-async def db_save_and_publish(message: Message, bot: Bot, db: Database, settings, code: int, name: str, trailer: str, voice: str = "", genre: str = "", language: str = "Uzbek tilida", content_type: str = "Anime"):
-    caption = f"🎬 <b>{name}</b>\n\n📚 Turi: {content_type}\n🎤 Ovoz berdi: {voice or '—'}\n📂 Nomi: {name}\n📝 Qismlar: 0 ta\n🎭 Janri: {genre or '—'}\n🌐 Tili: {language or 'Uzbek tilida'}\n🆔 Kod: {code}"
-    sent = await bot.send_video(settings.channel_id, trailer, caption=caption, parse_mode="HTML")
-    await db.save_anime(code, name, trailer, sent.message_id, voice, genre, language, content_type)
-    await db.save_trailer(code, trailer, message.from_user.id)
+async def db_save_and_publish(message: Message, bot: Bot, db: Database, settings, code: int, name: str, trailer: str, voice: str = "", genre: str = "", language: str = "Uzbek tilida"):
+    caption = f"🎬 <b>{name}</b>\n\n🎤 Ovoz berdi: {voice or '—'}\n📂 Nomi: {name}\n📝 Qismlar: 0 ta\n🎭 Janri: {genre or '—'}\n🌐 Tili: {language or 'Uzbek tilida'}\n🆔 Anime kodi: {code}"
+    if trailer.startswith("photo:"):
+        sent = await bot.send_photo(settings.channel_id, trailer.split(":", 1)[1], caption=caption, parse_mode="HTML")
+    else:
+        sent = await bot.send_video(settings.channel_id, trailer, caption=caption, parse_mode="HTML")
+    await db.save_anime(code, name, trailer, sent.message_id)
+    if not trailer.startswith("photo:"):
+        await db.save_trailer(code, trailer, message.from_user.id)
     await bot.edit_message_reply_markup(chat_id=settings.channel_id, message_id=sent.message_id, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📥 Yuklab olish", url=f"https://t.me/tarjimaanimelaruz_bot?start=anime_{code}")]
     ]))
@@ -41,17 +48,18 @@ async def addepisode(message: Message, settings):
     pending_episodes[message.from_user.id] = {"step": "name"}
     await message.answer("🎞 1/4 Anime nomini yuboring:")
 
-@router.message(Command(*CONTENT_COMMANDS.keys()))
-async def add_content(message: Message, settings):
+@router.message(Command("addanime"))
+async def addanime(message: Message, settings):
     if not is_admin(message, settings): return
-    command = (message.text or "").split()[0].lstrip("/").split("@")[0]
-    content_type = CONTENT_COMMANDS[command]
-    pending_animes[message.from_user.id] = {"step": "trailer", "content_type": content_type}
-    await message.answer(f"🎬 {content_type} qo‘shish\n\n1/3 Avval trailer videosini yuboring:")
+    pending_animes[message.from_user.id] = {"step": "trailer"}
+    await message.answer("🎬 1/3 Anime rasmi yoki trailer videosini yuboring:")
 
 @router.message(F.text, ~F.text.startswith("/"))
 async def episode_details(message: Message, bot: Bot, db: Database, settings):
-    if not is_admin(message, settings): return
+    # Bu handler barcha matn xabarlariga mos keladi. Admin bo‘lmagan
+    # foydalanuvchilar uchun qidiruv routeriga o‘tishga ruxsat berish kerak.
+    if not is_admin(message, settings):
+        raise SkipHandler
     if message.from_user.id in pending_required_channels:
         pending_required_channels.remove(message.from_user.id)
         try:
@@ -91,7 +99,7 @@ async def episode_details(message: Message, bot: Bot, db: Database, settings):
             code = int(message.text.strip())
             name = anime_state["name"]
             pending_animes.pop(message.from_user.id, None)
-            await db_save_and_publish(message, bot, db, settings, code, name, anime_state["trailer"], anime_state.get("voice", ""), anime_state.get("genre", ""), anime_state.get("language", "Uzbek tilida"), anime_state.get("content_type", "Anime"))
+            await db_save_and_publish(message, bot, db, settings, code, name, anime_state["trailer"], anime_state.get("voice", ""), anime_state.get("genre", ""), anime_state.get("language", "Uzbek tilida"))
             return
         return
     if not state: raise SkipHandler
@@ -110,6 +118,8 @@ async def episode_details(message: Message, bot: Bot, db: Database, settings):
 
 @router.message(F.text.regexp(r"^\d+$"))
 async def trailer_code(message: Message, settings):
+    if message.from_user.id in code_search_users:
+        raise SkipHandler
     if is_admin(message, settings):
         pending_trailers[message.from_user.id] = int(message.text)
         await message.answer(f"✅ {message.text} kodi qabul qilindi. Endi trailer videosini yuboring: /cancel")
@@ -148,7 +158,7 @@ async def add_video(message: Message, bot: Bot, db: Database, settings):
             if anime and anime[3]:
                 count = len(await db.get_episodes(code))
                 details = await db.get_anime_details(code)
-                voice, genre, language, content_type = (details[1:] if details else ("", "", "Uzbek tilida", "Anime"))
+                voice, genre, language = (details[1:] if details else ("", "", "Uzbek tilida"))
                 await bot.edit_message_caption(
                     chat_id=settings.channel_id,
                     message_id=anime[3],
@@ -169,6 +179,14 @@ async def add_video(message: Message, bot: Bot, db: Database, settings):
     except Exception:
         await message.answer("⚠️ Video qo‘shishda xatolik yuz berdi.")
 
+@router.message(F.photo)
+async def add_photo(message: Message, settings):
+    if not is_admin(message, settings): return
+    anime_state = pending_animes.get(message.from_user.id)
+    if anime_state and anime_state["step"] == "trailer":
+        anime_state.update(trailer=f"photo:{message.photo[-1].file_id}", step="name")
+        await message.answer("✅ 2/3 Anime nomini yuboring:")
+
 @router.message(Command("admin"))
 async def admin(message: Message, db: Database, settings):
     if not is_admin(message, settings): return
@@ -188,7 +206,7 @@ async def add_anime_help(callback: CallbackQuery, settings):
     if callback.from_user.id not in settings.admin_ids: return await callback.answer("Ruxsat yo‘q", show_alert=True)
     pending_animes[callback.from_user.id] = {"step": "trailer"}
     await callback.answer()
-    await callback.message.answer("🎬 1/3 Avval anime trailer videosini yuboring:")
+    await callback.message.answer("🎬 1/3 Anime rasmi yoki trailer videosini yuboring:")
 
 @router.callback_query(F.data == "admin:required_channels")
 async def required_channels_menu(callback: CallbackQuery, db: Database, settings):
@@ -235,13 +253,13 @@ async def remind_one(callback: CallbackQuery, bot: Bot, db: Database, settings):
     code = int(callback.data.split(":")[2]); anime = await db.get_anime(code)
     if not anime or not anime[2]: return await callback.answer("Trailer topilmadi", show_alert=True)
     details = await db.get_anime_details(code)
-    voice, genre, language, content_type = (details[1:] if details else ("", "", "Uzbek tilida", "Anime"))
+    voice, genre, language = (details[1:] if details else ("", "", "Uzbek tilida"))
     count = len(await db.get_episodes(code))
     caption = f"🎬 <b>{anime[1]}</b>\n\n🎤 Ovoz berdi: {voice or '—'}\n📂 Nomi: {anime[1]}\n📝 Qismlar: {count} ta\n🎭 Janri: {genre or '—'}\n🌐 Tili: {language or 'Uzbek tilida'}\n🆔 Anime kodi: {code}"
     sent = await bot.send_video(settings.channel_id, anime[2], caption=caption, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📥 Yuklab olish", url=f"https://t.me/tarjimaanimelaruz_bot?start=anime_{code}")]
     ]))
-    await db.save_anime(code, anime[1], anime[2], sent.message_id, voice, genre, language, content_type)
+    await db.save_anime(code, anime[1], anime[2], sent.message_id, voice, genre, language)
     await callback.answer("Kanalga yuborildi")
     await callback.message.answer(f"✅ {anime[1]} kanalda eslatildi.")
 
