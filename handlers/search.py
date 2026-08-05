@@ -139,10 +139,17 @@ async def episode_get(callback: CallbackQuery, bot: Bot, db: Database, settings)
         message_id = int(callback.data.split(":")[1])
         rows = await db.get_message(message_id) if hasattr(db, "get_message") else None
         if rows:
-            await bot.send_video(callback.from_user.id, rows[1], caption=rows[0])
+            caption, file_id, file_type = rows
+            if file_type == "photo" or file_id.startswith("photo:"):
+                await bot.send_photo(callback.from_user.id, file_id.removeprefix("photo:"), caption=caption)
+            elif file_type == "document":
+                await bot.send_document(callback.from_user.id, file_id, caption=caption)
+            else:
+                await bot.send_video(callback.from_user.id, file_id, caption=caption)
         else:
             await bot.forward_message(callback.from_user.id, settings.channel_id, message_id)
     except Exception:
+        logger.exception("Episode delivery failed: message_id=%s user_id=%s", locals().get("message_id"), callback.from_user.id)
         await callback.message.answer("⚠️ Qismni yuborishda xatolik yuz berdi.")
 
 @router.callback_query(F.data.startswith("trailer_show:"))
