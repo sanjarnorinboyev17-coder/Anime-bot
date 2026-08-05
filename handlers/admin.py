@@ -56,7 +56,10 @@ async def addanime(message: Message, settings):
 
 @router.message(F.text, ~F.text.startswith("/"))
 async def episode_details(message: Message, bot: Bot, db: Database, settings):
-    if not is_admin(message, settings): return
+    # Bu handler barcha matn xabarlariga mos keladi. Admin bo‘lmagan
+    # foydalanuvchilar uchun qidiruv routeriga o‘tishga ruxsat berish kerak.
+    if not is_admin(message, settings):
+        raise SkipHandler
     if message.from_user.id in pending_required_channels:
         pending_required_channels.remove(message.from_user.id)
         try:

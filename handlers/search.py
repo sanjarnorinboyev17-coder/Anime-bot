@@ -1,4 +1,5 @@
 import re
+import logging
 from aiogram import Router, F, Bot
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -8,6 +9,7 @@ except ImportError:
     from database import Database
 
 router = Router()
+logger = logging.getLogger(__name__)
 EPISODES_PER_PAGE = 10
 code_search_users: set[int] = set()
 NAME_BUTTON = "🔎 Anime nomi orqali izlash"
@@ -44,18 +46,30 @@ def episode_keyboard(rows, code, page, has_trailer=False):
 
 async def do_search(message: Message, query: str, db: Database):
     await db.upsert_user(message.from_user)
-    rows = await db.search(message.from_user.id, query.strip())
+    query = query.strip()
+    if not query:
+        return await message.answer("🔎 Anime nomini yoki kodini yuboring.")
+
+    rows = await db.search(message.from_user.id, query)
     groups, seen = [], set()
-    query_lower = query.strip().lower()
+    # Telegramdan kelgan apostrof va bo'shliqlar turlicha bo'lishi mumkin.
+    def normalize(value: str) -> str:
+        return re.sub(r"[’'`ʻʼ‘]", "'", " ".join((value or "").lower().split()))
+
+    query_lower = normalize(query)
     for code, name, _, _ in await db.list_animes():
-        if not query_lower or query_lower in name.lower() or query_lower in str(code):
+        if query_lower in normalize(name) or query_lower in str(code):
             groups.append((code, name)); seen.add(code)
     for row in rows:
         code = anime_code(row[1])
         if code is not None and code not in seen:
             groups.append((code, row[1])); seen.add(code)
     if not groups:
-        return await message.answer("🔎 Kechirasiz, topilmadi. Captionda anime kodi bo‘lishi kerak: <code>kod:26 Naruto 1-qism</code>", parse_mode="HTML")
+        return await message.answer(
+            "🔎 Kechirasiz, anime topilmadi. Nomini to‘liqroq yozib ko‘ring yoki kod orqali qidiring.\n\n"
+            "Masalan: <code>Tungi osmon ostida ko‘rinmas sevgi</code>",
+            parse_mode="HTML",
+        )
     trailers = {code for code, _ in groups if await db.get_trailer(code)}
     await message.answer(f"🔎 <b>{len(groups)} ta anime</b> topildi. Anime yoki trailer tanlang:", reply_markup=result_keyboard(groups, trailers), parse_mode="HTML")
 
@@ -104,7 +118,8 @@ async def search_text(message: Message, bot: Bot, db: Database):
         await bot.send_chat_action(message.chat.id, "typing")
         await do_search(message, message.text, db)
     except Exception:
-        await message.answer("⚠️ Qidiruvda xatolik yuz berdi.")
+        logger.exception("Anime search failed for user %s", message.from_user.id)
+        await message.answer("⚠️ Qidiruvda xatolik yuz berdi. Iltimos, yana bir marta urinib ko‘ring.")
 
 @router.callback_query(F.data.startswith("episode_select:"))
 async def episode_select(callback: CallbackQuery, db: Database):
