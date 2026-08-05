@@ -1,4 +1,5 @@
 import re
+import logging
 from aiogram import Router, F, Bot
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -15,6 +16,7 @@ except ImportError:
     from utils.cache import cache_channel_message
 
 router = Router()
+logger = logging.getLogger(__name__)
 pending_trailers: dict[int, int] = {}
 pending_episodes: dict[int, dict] = {}
 pending_animes: dict[int, dict] = {}
@@ -156,18 +158,18 @@ async def add_video(message: Message, bot: Bot, db: Database, settings):
             await db.save_message(-message.message_id, f"kod:{code} {name} qism:{episode}", message.video.file_id, "video", message.date.isoformat())
             anime = await db.get_anime(code)
             if anime and anime[3]:
-                count = len(await db.get_episodes(code))
-                details = await db.get_anime_details(code)
-                voice, genre, language = (details[1:] if details else ("", "", "Uzbek tilida"))
-                await bot.edit_message_caption(
-                    chat_id=settings.channel_id,
-                    message_id=anime[3],
-                    caption=f"🎬 <b>{anime[1]}</b>\n\n🎤 Ovoz berdi: {voice or '—'}\n📂 Nomi: {anime[1]}\n📝 Qismlar: {count} ta\n🎭 Janri: {genre or '—'}\n🌐 Tili: {language or 'Uzbek tilida'}\n🆔 Anime kodi: {anime[0]}",
-                    parse_mode="HTML",
-                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="📥 Yuklab olish", url=f"https://t.me/tarjimaanimelaruz_bot?start=anime_{anime[0]}")]
-                    ])
-                )
+                try:
+                    count = len(await db.get_episodes(code))
+                    details = await db.get_anime_details(code)
+                    voice, genre, language = (details[1:] if details else ("", "", "Uzbek tilida"))
+                    await bot.edit_message_caption(
+                        chat_id=settings.channel_id, message_id=anime[3],
+                        caption=f"🎬 <b>{anime[1]}</b>\n\n🎤 Ovoz berdi: {voice or '—'}\n📂 Nomi: {anime[1]}\n📝 Qismlar: {count} ta\n🎭 Janri: {genre or '—'}\n🌐 Tili: {language or 'Uzbek tilida'}\n🆔 Anime kodi: {anime[0]}",
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📥 Yuklab olish", url=f"https://t.me/tarjimaanimelaruz_bot?start=anime_{anime[0]}")]])
+                    )
+                except Exception:
+                    logger.exception("Failed to update anime channel post after episode save: code=%s", code)
             return await message.answer(f"✅ {name} — {episode}-qism qo‘shildi va cache qilindi.")
         trailer_code_value = pending_trailers.pop(message.from_user.id, None)
         if trailer_code_value is not None:
