@@ -1,5 +1,6 @@
 import re
 import logging
+from html import escape
 from aiogram import Router, F, Bot
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -34,9 +35,7 @@ def result_keyboard(groups, trailers):
 def episode_keyboard(rows, code, page, has_trailer=False):
     start, end = page * EPISODES_PER_PAGE, (page + 1) * EPISODES_PER_PAGE
     buttons = []
-    if has_trailer:
-        buttons.append([InlineKeyboardButton(text="🎬 Trailer", callback_data=f"trailer_show:{code}")])
-        buttons.append([InlineKeyboardButton(text=str(episode_number(row[1]) or index + 1), callback_data=f"episode_get:{row[0]}") for index, row in enumerate(rows[start:end], start=start)])
+    buttons.append([InlineKeyboardButton(text=str(episode_number(row[1]) or index + 1), callback_data=f"episode_get:{row[0]}") for index, row in enumerate(rows[start:end], start=start)])
     nav = []
     if page > 0: nav.append(InlineKeyboardButton(text="⬅️ Oldingi", callback_data=f"episode_select:{code}:{page-1}"))
     if end < len(rows): nav.append(InlineKeyboardButton(text="Keyingi ➡️", callback_data=f"episode_select:{code}:{page+1}"))
@@ -84,6 +83,30 @@ async def do_code_search(message: Message, code_text: str, db: Database):
     trailers = {code} if await db.get_trailer(code) else set()
     await message.answer("🔎 Faqat shu kodga mos anime topildi:", reply_markup=result_keyboard([(code, anime[1])], trailers))
 
+async def send_anime_result(message: Message, bot: Bot, db: Database, code: int, rows, page=0):
+    anime = await db.get_anime(code)
+    details = await db.get_anime_details(code)
+    name = escape(anime[1] if anime else (details[0] if details else f"Anime {code}"))
+    voice, genre, language = (details[1:] if details else ("", "", "Uzbek tilida"))
+    text = (
+        f"🎬 <b>{name}</b>\n\n"
+        f"🎤 Ovoz berdi: {escape(voice or '—')}\n"
+        f"📂 Nomi: {name}\n"
+        f"📝 Qismlar: {len(rows)} ta\n"
+        f"🎭 Janri: {escape(genre or '—')}\n"
+        f"🌐 Tili: {escape(language or 'Uzbek tilida')}\n"
+        f"🆔 Anime kodi: {code}"
+    )
+    keyboard = episode_keyboard(rows, code, page)
+    trailer = await db.get_trailer(code)
+    media = trailer[0] if trailer else (anime[2] if anime else None)
+    if media and media.startswith("photo:"):
+        await bot.send_photo(message.chat.id, media.split(":", 1)[1], caption=text, parse_mode="HTML", reply_markup=keyboard)
+    elif media:
+        await bot.send_video(message.chat.id, media, caption=text, parse_mode="HTML", reply_markup=keyboard)
+    else:
+        await message.answer(text, parse_mode="HTML", reply_markup=keyboard)
+
 @router.message(Command("search"))
 async def search_command(message: Message):
     from .start import search_menu
@@ -122,13 +145,17 @@ async def search_text(message: Message, bot: Bot, db: Database):
         await message.answer("⚠️ Qidiruvda xatolik yuz berdi. Iltimos, yana bir marta urinib ko‘ring.")
 
 @router.callback_query(F.data.startswith("episode_select:"))
-async def episode_select(callback: CallbackQuery, db: Database):
+async def episode_select(callback: CallbackQuery, bot: Bot, db: Database):
     try:
         _, code, page = callback.data.split(":")
         rows = await db.get_episodes(int(code))
         if not rows: return await callback.answer("Bu anime uchun qismlar topilmadi", show_alert=True)
         await callback.answer()
-        await callback.message.edit_text(f"🎞 Anime kodi: {code}\nTrailer yoki qismni tanlang:", reply_markup=episode_keyboard(rows, int(code), int(page), bool(await db.get_trailer(int(code)))))
+        if int(page) == 0:
+            await callback.message.delete()
+            await send_anime_result(callback.message, bot, db, int(code), rows)
+        else:
+            await callback.message.edit_text(f"🎞 Anime kodi: {code}\nQismlarni tanlang:", reply_markup=episode_keyboard(rows, int(code), int(page)))
     except Exception:
         await callback.answer("Xatolik yuz berdi", show_alert=True)
 
